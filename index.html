@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handwritten Text Converter</title>
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the app */
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 1rem; /* Rounded corners */
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            padding: 2.5rem;
+            max-width: 900px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        .image-preview-container {
+            position: relative;
+            width: 100%;
+            max-height: 600px; /* Limit height for large images */
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #e2e8f0;
+            border-radius: 0.75rem;
+            min-height: 200px; /* Minimum height for the container */
+        }
+        .image-preview {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain; /* Ensure image fits within bounds */
+            border-radius: 0.75rem;
+        }
+        .text-overlay-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Allow clicks to pass through to the image below if needed */
+            overflow: hidden; /* Hide overflowing text */
+        }
+        .word-span {
+            position: absolute;
+            white-space: nowrap; /* Prevent words from wrapping */
+            color: #1a202c; /* Dark text color */
+            /* background-color: rgba(255, 255, 0, 0.2); /* Optional: highlight words */
+            line-height: 1; /* Adjust line height to match bounding box */
+            transform-origin: top left; /* For potential rotation if needed */
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .text-preview-area {
+            white-space: pre-wrap; /* Preserves whitespace and wraps text */
+            word-wrap: break-word; /* Breaks long words */
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            min-height: 150px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #334155;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-gray-800 text-center mb-6">Handwritten Text Converter</h1>
+
+        <div class="flex flex-col md:flex-row gap-6">
+            <div class="w-full md:w-1/2 flex flex-col gap-4">
+                <label for="imageUpload" class="block text-sm font-medium text-gray-700">Upload Handwritten Image</label>
+                <input type="file" id="imageUpload" accept="image/*" class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+
+                <button id="convertBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 flex items-center justify-center gap-2">
+                    <span id="buttonText">Convert to Text</span>
+                    <div id="loadingSpinner" class="loading-spinner hidden"></div>
+                </button>
+
+                <button id="downloadTextBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 flex items-center justify-center gap-2 mt-2 hidden">
+                    Download Text
+                </button>
+
+                <div id="messageBox" class="hidden p-4 mt-4 text-sm text-red-700 bg-red-100 rounded-lg" role="alert">
+                    <span class="font-medium">Error:</span> <span id="errorMessage"></span>
+                </div>
+
+                <!-- New: Plain Text Preview Area -->
+                <div id="plainTextPreviewContainer" class="mt-4 hidden">
+                    <p class="block text-sm font-medium text-gray-700 mb-2">Plain Text Preview:</p>
+                    <div id="plainTextPreview" class="text-preview-area">
+                        <!-- Converted text will be displayed here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="w-full md:w-1/2 flex flex-col gap-4">
+                <p class="block text-sm font-medium text-gray-700">Image Preview & Converted Text Overlay:</p>
+                <div id="imagePreviewContainer" class="image-preview-container">
+                    <img id="imagePreview" class="image-preview hidden" alt="Image Preview">
+                    <p id="placeholderText" class="text-gray-500">Upload an image to see the preview.</p>
+                    <div id="textOverlayContainer" class="text-overlay-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get references to DOM elements
+        const imageUpload = document.getElementById('imageUpload');
+        const imagePreview = document.getElementById('imagePreview');
+        const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+        const placeholderText = document.getElementById('placeholderText');
+        const convertBtn = document.getElementById('convertBtn');
+        const buttonText = document.getElementById('buttonText');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const textOverlayContainer = document.getElementById('textOverlayContainer');
+        const messageBox = document.getElementById('messageBox');
+        const errorMessageSpan = document.getElementById('errorMessage');
+        const downloadTextBtn = document.getElementById('downloadTextBtn');
+        const plainTextPreviewContainer = document.getElementById('plainTextPreviewContainer'); // New container
+        const plainTextPreview = document.getElementById('plainTextPreview'); // New text preview element
+
+        // Google Cloud Vision API Key (replace with your actual key or use a proxy in production)
+        const VISION_API_KEY = 'AIzaSyBNCuqh0V-QV1JWTBf3XjdMiE8XhXRFfz0';
+        const VISION_API_URL = `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`;
+
+        let base64Image = null;
+        let convertedPlainText = '';
+
+        // Function to display messages (errors or info)
+        function showMessage(message, type = 'error') {
+            errorMessageSpan.textContent = message;
+            messageBox.classList.remove('hidden');
+            if (type === 'error') {
+                messageBox.classList.add('bg-red-100', 'text-red-700');
+                messageBox.classList.remove('bg-green-100', 'text-green-700');
+            } else {
+                messageBox.classList.add('bg-green-100', 'text-green-700');
+                messageBox.classList.remove('bg-red-100', 'text-red-700');
+            }
+        }
+
+        // Function to hide messages
+        function hideMessage() {
+            messageBox.classList.add('hidden');
+        }
+
+        // Event listener for image file selection
+        imageUpload.addEventListener('change', function(event) {
+            hideMessage();
+            downloadTextBtn.classList.add('hidden');
+            plainTextPreviewContainer.classList.add('hidden'); // Hide preview on new upload
+            plainTextPreview.textContent = ''; // Clear preview text
+            convertedPlainText = '';
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.classList.remove('hidden');
+                    placeholderText.classList.add('hidden');
+                    base64Image = e.target.result.split(',')[1];
+                    textOverlayContainer.innerHTML = '';
+                };
+                reader.onerror = function() {
+                    showMessage('Failed to read file.', 'error');
+                    base64Image = null;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                imagePreview.src = '';
+                imagePreview.classList.add('hidden');
+                placeholderText.classList.remove('hidden');
+                base64Image = null;
+                textOverlayContainer.innerHTML = '';
+            }
+        });
+
+        // Event listener for the Convert button
+        convertBtn.addEventListener('click', async function() {
+            hideMessage();
+            downloadTextBtn.classList.add('hidden');
+            plainTextPreviewContainer.classList.add('hidden'); // Hide preview before conversion
+            plainTextPreview.textContent = ''; // Clear preview text
+            convertedPlainText = '';
+
+            if (!base64Image) {
+                showMessage('Please upload an image first.', 'error');
+                return;
+            }
+
+            // Show loading state
+            buttonText.textContent = 'Converting...';
+            loadingSpinner.classList.remove('hidden');
+            convertBtn.disabled = true;
+            imageUpload.disabled = true;
+
+            try {
+                // Construct the request payload for Google Cloud Vision API
+                const requestPayload = {
+                    requests: [
+                        {
+                            image: {
+                                content: base64Image
+                            },
+                            features: [
+                                {
+                                    type: 'DOCUMENT_TEXT_DETECTION',
+                                    maxResults: 1
+                                }
+                            ]
+                        }
+                    ]
+                };
+
+                // Make the API call
+                const response = await fetch(VISION_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestPayload)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error ? errorData.error.message : 'Network response was not ok.');
+                }
+
+                const result = await response.json();
+                console.log('Vision API Response:', result);
+
+                // Process the API response
+                if (result.responses && result.responses.length > 0) {
+                    const fullTextAnnotation = result.responses[0].fullTextAnnotation;
+
+                    if (fullTextAnnotation && fullTextAnnotation.pages && fullTextAnnotation.pages.length > 0) {
+                        renderTextOverlay(fullTextAnnotation);
+                        convertedPlainText = reconstructPlainTextByVisualLines(fullTextAnnotation);
+                        downloadTextBtn.classList.remove('hidden');
+                        plainTextPreview.textContent = convertedPlainText; // Display text in preview
+                        plainTextPreviewContainer.classList.remove('hidden'); // Show preview container
+                        showMessage('Text converted successfully!', 'success');
+                    } else {
+                        showMessage('No text detected in the image.', 'error');
+                    }
+                } else {
+                    showMessage('Unexpected API response structure.', 'error');
+                }
+
+            } catch (error) {
+                console.error('Error during OCR:', error);
+                showMessage(`Failed to convert text: ${error.message}`, 'error');
+            } finally {
+                // Reset button state
+                buttonText.textContent = 'Convert to Text';
+                loadingSpinner.classList.add('hidden');
+                convertBtn.disabled = false;
+                imageUpload.disabled = false;
+            }
+        });
+
+        // Helper function to get the average Y coordinate of a word's bounding box
+        function getWordMidY(word) {
+            const vertices = word.boundingBox.vertices;
+            return (vertices[0].y + vertices[1].y + vertices[2].y + vertices[3].y) / 4;
+        }
+
+        // Helper function to get the height of a word's bounding box
+        function getWordHeight(word) {
+            const vertices = word.boundingBox.vertices;
+            return Math.max(vertices[2].y, vertices[3].y) - Math.min(vertices[0].y, vertices[1].y);
+        }
+
+        // Function to reconstruct plain text based on visual lines from word bounding boxes
+        function reconstructPlainTextByVisualLines(fullTextAnnotation) {
+            let text = '';
+            if (!fullTextAnnotation || !fullTextAnnotation.pages) {
+                return text;
+            }
+
+            const allWords = [];
+            fullTextAnnotation.pages.forEach(page => {
+                page.blocks.forEach(block => {
+                    block.paragraphs.forEach(paragraph => {
+                        paragraph.words.forEach(word => {
+                            allWords.push(word);
+                        });
+                    });
+                });
+            });
+
+            // Sort all words primarily by their top Y-coordinate, then by their left X-coordinate
+            allWords.sort((a, b) => {
+                const aY = a.boundingBox.vertices[0].y;
+                const bY = b.boundingBox.vertices[0].y;
+                const aX = a.boundingBox.vertices[0].x;
+                const bX = b.boundingBox.vertices[0].x;
+
+                if (aY !== bY) {
+                    return aY - bY;
+                }
+                return aX - bX;
+            });
+
+            if (allWords.length === 0) {
+                return '';
+            }
+
+            const totalWordHeight = allWords.reduce((sum, word) => sum + getWordHeight(word), 0);
+            const averageWordHeight = totalWordHeight / allWords.length;
+
+            let currentLineWords = [];
+            let currentLineMidY = -1;
+
+            const trailingPunctuationRegex = /[.,!?;:)}\]]/;
+
+            for (let i = 0; i < allWords.length; i++) {
+                const word = allWords[i];
+                const wordMidY = getWordMidY(word);
+
+                if (currentLineWords.length === 0) {
+                    currentLineWords.push(word);
+                    currentLineMidY = wordMidY;
+                } else {
+                    const verticalTolerance = averageWordHeight * 0.7;
+
+                    if (Math.abs(wordMidY - currentLineMidY) <= verticalTolerance) {
+                        currentLineWords.push(word);
+                        currentLineMidY = (currentLineMidY * (currentLineWords.length - 1) + wordMidY) / currentLineWords.length;
+                    } else {
+                        currentLineWords.sort((a, b) => a.boundingBox.vertices[0].x - b.boundingBox.vertices[0].x);
+
+                        let lineText = '';
+                        for (let j = 0; j < currentLineWords.length; j++) {
+                            const wordContent = currentLineWords[j].symbols.map(s => s.text).join('');
+                            if (trailingPunctuationRegex.test(wordContent) && lineText.length > 0 && lineText[lineText.length - 1] === ' ') {
+                                lineText = lineText.slice(0, -1) + wordContent;
+                            } else {
+                                if (lineText.length > 0) {
+                                    lineText += ' ';
+                                }
+                                lineText += wordContent;
+                            }
+                        }
+                        text += lineText + '\n';
+
+                        const lastWordOfPreviousLine = currentLineWords[currentLineWords.length - 1];
+                        const lastWordBottomY = lastWordOfPreviousLine.boundingBox.vertices[2].y;
+                        const currentWordTopY = word.boundingBox.vertices[0].y;
+
+                        if ((currentWordTopY - lastWordBottomY) > (averageWordHeight * 1.5)) {
+                            text += '\n';
+                        }
+
+                        currentLineWords = [word];
+                        currentLineMidY = wordMidY;
+                    }
+                }
+            }
+
+            if (currentLineWords.length > 0) {
+                currentLineWords.sort((a, b) => a.boundingBox.vertices[0].x - b.boundingBox.vertices[0].x);
+
+                let lineText = '';
+                for (let j = 0; j < currentLineWords.length; j++) {
+                    const wordContent = currentLineWords[j].symbols.map(s => s.text).join('');
+                    if (trailingPunctuationRegex.test(wordContent) && lineText.length > 0 && lineText[lineText.length - 1] === ' ') {
+                        lineText = lineText.slice(0, -1) + wordContent;
+                    } else {
+                        if (lineText.length > 0) {
+                            lineText += ' ';
+                        }
+                        lineText += wordContent;
+                    }
+                }
+                text += lineText;
+            }
+
+            return text.trim();
+        }
+
+
+        // Function to render text overlay based on Vision API bounding boxes
+        function renderTextOverlay(fullTextAnnotation) {
+            textOverlayContainer.innerHTML = '';
+            window.lastFullTextAnnotation = fullTextAnnotation;
+
+            const imgWidth = imagePreview.offsetWidth;
+            const imgHeight = imagePreview.offsetHeight;
+
+            if (imgWidth === 0 || imgHeight === 0) {
+                console.warn('Image dimensions not available. Cannot render overlay.');
+                showMessage('Image not fully loaded. Please try again.', 'error');
+                return;
+            }
+
+            const originalImageWidth = fullTextAnnotation.pages[0].width;
+            const originalImageHeight = fullTextAnnotation.pages[0].height;
+
+            const scaleX = imgWidth / originalImageWidth;
+            const scaleY = imgHeight / originalImageHeight;
+
+            fullTextAnnotation.pages[0].blocks.forEach(block => {
+                block.paragraphs.forEach(paragraph => {
+                    paragraph.words.forEach(word => {
+                        const wordText = word.symbols.map(s => s.text).join('');
+                        const boundingBox = word.boundingBox.vertices;
+
+                        const xs = boundingBox.map(v => v.x);
+                        const ys = boundingBox.map(v => v.y);
+
+                        const minX = Math.min(...xs);
+                        const minY = Math.min(...ys);
+                        const maxX = Math.max(...xs);
+                        const maxY = Math.max(...ys);
+
+                        const width = maxX - minX;
+                        const height = maxY - minY;
+
+                        const wordSpan = document.createElement('span');
+                        wordSpan.textContent = wordText;
+                        wordSpan.classList.add('word-span');
+
+                        wordSpan.style.left = `${minX * scaleX}px`;
+                        wordSpan.style.top = `${minY * scaleY}px`;
+                        wordSpan.style.width = `${width * scaleX}px`;
+                        wordSpan.style.height = `${height * scaleY}px`;
+
+                        wordSpan.style.fontSize = `${height * scaleY * 0.8}px`;
+
+                        textOverlayContainer.appendChild(wordSpan);
+                    });
+                });
+            });
+        }
+
+        // Adjust text overlay container size when image loads or window resizes
+        function adjustOverlaySize() {
+            if (imagePreview.classList.contains('hidden')) {
+                textOverlayContainer.style.width = '100%';
+                textOverlayContainer.style.height = '100%';
+                return;
+            }
+            if (imagePreview.offsetWidth === 0 || imagePreview.offsetHeight === 0) {
+                setTimeout(adjustOverlaySize, 100);
+                return;
+            }
+
+            const imgRect = imagePreview.getBoundingClientRect();
+            textOverlayContainer.style.width = `${imagePreview.offsetWidth}px`;
+            textOverlayContainer.style.height = `${imagePreview.offsetHeight}px`;
+            textOverlayContainer.style.left = `${imagePreview.offsetLeft}px`;
+            textOverlayContainer.style.top = `${imagePreview.offsetTop}px`;
+
+            if (window.lastFullTextAnnotation) {
+                renderTextOverlay(window.lastFullTextAnnotation);
+            }
+        }
+
+        // Function to download the converted plain text
+        downloadTextBtn.addEventListener('click', function() {
+            if (convertedPlainText) {
+                const blob = new Blob([convertedPlainText], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'converted_text.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } else {
+                showMessage('No text available to download. Please convert an image first.', 'error');
+            }
+        });
+
+        imagePreview.onload = adjustOverlaySize;
+        window.addEventListener('resize', adjustOverlaySize);
+        document.addEventListener('DOMContentLoaded', adjustOverlaySize);
+    </script>
+</body>
+</html>
